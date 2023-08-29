@@ -1,6 +1,10 @@
-const N: u8 = 4;
+use colored::Colorize;
+use colored::*;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+const N: u8 = 3;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Move {
     Missionary,
     Cannibal,
@@ -9,13 +13,22 @@ pub enum Move {
     MissionaryCannibal,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct MissionaryCannibals {
     missionaries: u8,
     cannibals: u8,
     boat: bool,
 
     sail_history: Vec<Move>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Node {
+    state: (u8, u8, bool),
+    terminal: bool,
+    accepted: bool,
+    transitions: Vec<Move>,
+    children: Vec<Node>,
 }
 
 impl PartialEq for MissionaryCannibals {
@@ -36,55 +49,76 @@ impl MissionaryCannibals {
         }
     }
 
-    pub fn get_next_states(&self) -> Vec<MissionaryCannibals> {
-        let mut next_states: Vec<MissionaryCannibals> = Vec::new();
+    pub fn is_terminal(&self) -> bool {
+        self.discover_neighbours() == [None, None, None, None, None]
+    }
+
+    pub fn discover_neighbours(&self) -> [Option<MissionaryCannibals>; 5] {
+        let mut next_states: [Option<MissionaryCannibals>; 5] = [None, None, None, None, None];
 
         let mut next_state = self.clone();
         if next_state.sail(Move::Missionary) == true {
-            next_states.push(next_state);
+            next_states[0] = Some(next_state);
         }
 
         let mut next_state = self.clone();
         if next_state.sail(Move::Cannibal) == true {
-            next_states.push(next_state);
+            next_states[1] = Some(next_state);
         }
 
         let mut next_state = self.clone();
         if next_state.sail(Move::TwoMissionaries) == true {
-            next_states.push(next_state);
+            next_states[2] = Some(next_state);
         }
 
         let mut next_state = self.clone();
         if next_state.sail(Move::TwoCannibals) == true {
-            next_states.push(next_state);
+            next_states[3] = Some(next_state);
         }
 
         let mut next_state = self.clone();
         if next_state.sail(Move::MissionaryCannibal) == true {
-            next_states.push(next_state);
+            next_states[4] = Some(next_state);
         }
 
         next_states
     }
 
-    fn breadth_first_search(&self) -> Option<MissionaryCannibals> {
-        let mut states: Vec<MissionaryCannibals> = Vec::new();
+    fn breadth_first_search(&mut self) -> Option<(MissionaryCannibals, Vec<Node>)> {
+        let mut nodes: Vec<Node> = Vec::new();
 
-        states.push(self.clone());
+        let mut queue: Vec<MissionaryCannibals> = Vec::new();
+        let mut visited: Vec<MissionaryCannibals> = Vec::new();
 
-        loop {
-            let current_state = states.remove(0);
+        queue.push(self.clone());
 
-            if current_state.is_game_complete() {
-                return Some(current_state);
+        while !queue.is_empty() {
+            let front = queue.remove(0);
+
+            visited.push(front.clone());
+
+            nodes.push(Node {
+                state: (front.missionaries, front.cannibals, front.boat),
+                transitions: front.sail_history.clone(),
+                terminal: true,
+                accepted: front.is_game_complete(),
+                children: Vec::new(),
+            });
+
+            if front.is_game_complete() {
+                return Some((front, nodes));
             }
 
-            for next_state in current_state.get_next_states() {
-                if !states.contains(&next_state) {
-                    states.push(next_state);
+            for next_state in front.discover_neighbours() {
+                if next_state.is_some() {
+                    if !visited.contains(&next_state.clone().unwrap()) {
+                        queue.push(next_state.clone().unwrap());
+                    }
                 }
             }
         }
+
+        return None;
     }
 
     fn is_game_complete(&self) -> bool {
@@ -149,11 +183,22 @@ impl MissionaryCannibals {
             }
         }
 
-        if next_state.missionaries > 0 && next_state.cannibals > next_state.missionaries {
+        if next_state.missionaries != 0 && (next_state.missionaries < next_state.cannibals) {
             valid = false;
         }
 
-        if next_state.missionaries < N && next_state.cannibals < next_state.missionaries {
+        let missionary_next_side = N as i8 - next_state.missionaries as i8;
+        let cannibal_next_side = N as i8 - next_state.cannibals as i8;
+
+        if next_state.cannibals > N
+            || next_state.missionaries > N
+            || missionary_next_side < 0
+            || cannibal_next_side < 0
+        {
+            valid = false;
+        }
+
+        if missionary_next_side != 0 && (missionary_next_side < cannibal_next_side) {
             valid = false;
         }
 
@@ -162,6 +207,9 @@ impl MissionaryCannibals {
             self.missionaries = next_state.missionaries;
             self.cannibals = next_state.cannibals;
             self.sail_history.push(kind);
+            // self.neighbour = [None, None, None, None, None];
+        } else {
+            // println!("Invalid move");
         }
         return valid;
     }
@@ -169,14 +217,68 @@ impl MissionaryCannibals {
 
 #[test]
 fn test_game() {
-    let game = MissionaryCannibals::new();
-    // game.sail(Move::TwoCannibals);
-    // game.sail(Move::Cannibal);
-    // game.sail(Move::TwoCannibals);
-    // game.sail(Move::Cannibal);
-    // game.sail(Move::TwoMissionaries);
-    // game.sail(Move::Missionary);
+    let mut game = MissionaryCannibals::new();
 
-    println!("{:?}", game.breadth_first_search());
-    // println!("{:?}", game.is_game_complete());
+    let (final_game, nodes) = game.breadth_first_search().unwrap();
+
+    let mut prev_transition_n = 0;
+    for node in nodes {
+        if node.transitions.len() != prev_transition_n {
+            println!("------------------");
+            println!("    BACKTRACK     ");
+            println!("------------------");
+            println!("------------------");
+            println!("      {}", "##".yellow());
+            prev_transition_n = node.transitions.len();
+        }
+
+        println!("      {}", "||".yellow());
+        println!("      {}", "||".yellow());
+        println!("{:?}", node.transitions.last());
+        println!("      {}", "||".yellow());
+        println!("      {}", "||".yellow());
+        println!("      {}", "\\/".yellow());
+
+        if node.accepted {
+            println!("{}", "------------------".green(),);
+            println!(
+                "{} {}, {}, {} {}",
+                "<<".green(),
+                node.state.0.to_string().green(),
+                node.state.1.to_string().green(),
+                node.state.2.to_string().green(),
+                ">>".green(),
+            );
+            println!("{}", "------------------".green(),);
+        } else if node.terminal {
+            println!("{}", "------------------".red(),);
+            println!(
+                "{} {}, {}, {} {}",
+                "<<".red(),
+                node.state.0.to_string().red(),
+                node.state.1.to_string().red(),
+                node.state.2.to_string().red(),
+                ">>".red(),
+            );
+            println!("{}", "------------------".red(),);
+        } else {
+            println!("{}", "------------------".blue(),);
+            println!(
+                "{} {}, {}, {} {}",
+                "<<".blue(),
+                node.state.0.to_string().blue(),
+                node.state.1.to_string().blue(),
+                node.state.2.to_string().blue(),
+                ">>".blue(),
+            );
+            println!("{}", "------------------".blue(),);
+        }
+    }
+
+    println!("{}", "------------------".magenta(),);
+    println!("{}", "      Actions     ".magenta(),);
+    println!("{}", "------------------".magenta(),);
+    for action in final_game.sail_history {
+        println!("{}", format!("{:?}", action).to_string().green());
+    }
 }
