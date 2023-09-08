@@ -1,4 +1,3 @@
-mod structure;
 use std::collections::VecDeque;
 
 // Define a TreeNode struct representing a node in the multi-branch tree.
@@ -99,4 +98,3 @@ fn main() {
         println!("Node not found in breadth-first search.");
     }
 }
-

@@ -1,5 +1,6 @@
-use colored::Colorize;
-use colored::*;
+use std::io::{BufRead, BufReader, Error, Write};
+use std::{fmt::Display, fs::File};
+
 use serde::{Deserialize, Serialize};
 
 const N: u8 = 3;
@@ -14,24 +15,27 @@ pub enum Move {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct MissionaryCannibals {
+pub struct State {
     missionaries: u8,
     cannibals: u8,
     boat: bool,
 
     sail_history: Vec<Move>,
+    children: Vec<State>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Node {
-    state: (u8, u8, bool),
-    terminal: bool,
-    accepted: bool,
-    transitions: Vec<Move>,
-    children: Vec<Node>,
+impl ToString for State {
+    fn to_string(&self) -> String {
+        format!(
+            "{}{}{}",
+            self.missionaries,
+            self.cannibals,
+            if self.boat { 1 } else { 0 }
+        )
+    }
 }
 
-impl PartialEq for MissionaryCannibals {
+impl PartialEq for State {
     fn eq(&self, other: &Self) -> bool {
         self.missionaries == other.missionaries
             && self.cannibals == other.cannibals
@@ -39,86 +43,56 @@ impl PartialEq for MissionaryCannibals {
     }
 }
 
-impl MissionaryCannibals {
-    fn new() -> MissionaryCannibals {
-        MissionaryCannibals {
+impl State {
+    fn new() -> State {
+        State {
             missionaries: N,
             cannibals: N,
             boat: true,
             sail_history: Vec::new(),
+            children: Vec::new(),
         }
     }
 
-    pub fn is_terminal(&self) -> bool {
-        self.discover_neighbours() == [None, None, None, None, None]
+    pub fn last_move(&self) -> Option<Move> {
+        self.sail_history.last().cloned()
     }
 
-    pub fn discover_neighbours(&self) -> [Option<MissionaryCannibals>; 5] {
-        let mut next_states: [Option<MissionaryCannibals>; 5] = [None, None, None, None, None];
+    pub fn is_terminal(&self) -> bool {
+        self.children == vec![]
+    }
+
+    pub fn discover_neighbours(&mut self) -> Vec<&mut State> {
+        let mut next_states: Vec<State> = Vec::new();
 
         let mut next_state = self.clone();
         if next_state.sail(Move::Missionary) == true {
-            next_states[0] = Some(next_state);
+            next_states.push(next_state)
         }
 
         let mut next_state = self.clone();
         if next_state.sail(Move::Cannibal) == true {
-            next_states[1] = Some(next_state);
+            next_states.push(next_state);
         }
 
         let mut next_state = self.clone();
         if next_state.sail(Move::TwoMissionaries) == true {
-            next_states[2] = Some(next_state);
+            next_states.push(next_state);
         }
 
         let mut next_state = self.clone();
         if next_state.sail(Move::TwoCannibals) == true {
-            next_states[3] = Some(next_state);
+            next_states.push(next_state);
         }
 
         let mut next_state = self.clone();
         if next_state.sail(Move::MissionaryCannibal) == true {
-            next_states[4] = Some(next_state);
+            next_states.push(next_state);
         }
 
-        next_states
-    }
+        self.children = next_states.clone();
 
-    fn breadth_first_search(&mut self) -> Option<(MissionaryCannibals, Vec<Node>)> {
-        let mut nodes: Vec<Node> = Vec::new();
-
-        let mut queue: Vec<MissionaryCannibals> = Vec::new();
-        let mut visited: Vec<MissionaryCannibals> = Vec::new();
-
-        queue.push(self.clone());
-
-        while !queue.is_empty() {
-            let front = queue.remove(0);
-
-            visited.push(front.clone());
-
-            nodes.push(Node {
-                state: (front.missionaries, front.cannibals, front.boat),
-                transitions: front.sail_history.clone(),
-                terminal: true,
-                accepted: front.is_game_complete(),
-                children: Vec::new(),
-            });
-
-            if front.is_game_complete() {
-                return Some((front, nodes));
-            }
-
-            for next_state in front.discover_neighbours() {
-                if next_state.is_some() {
-                    if !visited.contains(&next_state.clone().unwrap()) {
-                        queue.push(next_state.clone().unwrap());
-                    }
-                }
-            }
-        }
-
-        return None;
+        return self.children.iter_mut().collect();
     }
 
     fn is_game_complete(&self) -> bool {
@@ -215,70 +189,69 @@ impl MissionaryCannibals {
     }
 }
 
+pub fn build_tree(state: &mut State) -> String {
+    let game = state;
+    // let mut graphviz_nodes = String::new();
+    // let mut graphviz_edges = String::new();
+    let mut graphviz = String::new();
+
+    let mut queue: Vec<&mut State> = Vec::new();
+    let mut visited: Vec<State> = Vec::new();
+
+    graphviz.push_str(&format!(
+        "    {} [label=\"<< {}, {}, {}>>\", fillcolor=blue];\n",
+        game.to_string(),
+        game.missionaries,
+        game.cannibals,
+        game.boat
+    ));
+
+    queue.push(game);
+
+    let mut current_state;
+    let mut neighbours;
+    while queue.len() > 0 {
+        current_state = queue.remove(0);
+
+        let current_state_clone = current_state.clone();
+
+        visited.push(current_state.clone());
+
+        neighbours = current_state.discover_neighbours();
+
+        for neighbour in neighbours {
+            graphviz.push_str(&format!(
+                "    {} [label=\"<< {}, {}, {}>>\", fillcolor=blue];\n",
+                neighbour.to_string(),
+                neighbour.missionaries,
+                neighbour.cannibals,
+                neighbour.boat
+            ));
+            graphviz.push_str(&format!(
+                "    {} -> {} [label=\"{:?}\", color=red];\n",
+                current_state_clone.to_string(),
+                neighbour.to_string(),
+                neighbour.sail_history.last().unwrap()
+            ));
+            if visited.iter().find(|x| *x == neighbour).is_some() {
+                continue;
+            } else if queue.contains(&neighbour) {
+                continue;
+            } else {
+                queue.push(neighbour);
+            }
+        }
+    }
+
+    let data = format!("digraph {{\n{}}}", graphviz);
+    return data;
+}
+
 #[test]
 fn test_game() {
-    let mut game = MissionaryCannibals::new();
+    let mut game = State::new();
+    let gviz = build_tree(&mut game);
 
-    let (final_game, nodes) = game.breadth_first_search().unwrap();
-
-    let mut prev_transition_n = 0;
-    for node in nodes {
-        if node.transitions.len() != prev_transition_n {
-            println!("------------------");
-            println!("    BACKTRACK     ");
-            println!("------------------");
-            println!("------------------");
-            println!("      {}", "##".yellow());
-            prev_transition_n = node.transitions.len();
-        }
-
-        println!("      {}", "||".yellow());
-        println!("      {}", "||".yellow());
-        println!("{:?}", node.transitions.last());
-        println!("      {}", "||".yellow());
-        println!("      {}", "||".yellow());
-        println!("      {}", "\\/".yellow());
-
-        if node.accepted {
-            println!("{}", "------------------".green(),);
-            println!(
-                "{} {}, {}, {} {}",
-                "<<".green(),
-                node.state.0.to_string().green(),
-                node.state.1.to_string().green(),
-                node.state.2.to_string().green(),
-                ">>".green(),
-            );
-            println!("{}", "------------------".green(),);
-        } else if node.terminal {
-            println!("{}", "------------------".red(),);
-            println!(
-                "{} {}, {}, {} {}",
-                "<<".red(),
-                node.state.0.to_string().red(),
-                node.state.1.to_string().red(),
-                node.state.2.to_string().red(),
-                ">>".red(),
-            );
-            println!("{}", "------------------".red(),);
-        } else {
-            println!("{}", "------------------".blue(),);
-            println!(
-                "{} {}, {}, {} {}",
-                "<<".blue(),
-                node.state.0.to_string().blue(),
-                node.state.1.to_string().blue(),
-                node.state.2.to_string().blue(),
-                ">>".blue(),
-            );
-            println!("{}", "------------------".blue(),);
-        }
-    }
-
-    println!("{}", "------------------".magenta(),);
-    println!("{}", "      Actions     ".magenta(),);
-    println!("{}", "------------------".magenta(),);
-    for action in final_game.sail_history {
-        println!("{}", format!("{:?}", action).to_string().green());
-    }
+    let mut file = File::create("graph.dot").unwrap();
+    file.write_all(gviz.as_bytes()).unwrap();
 }
