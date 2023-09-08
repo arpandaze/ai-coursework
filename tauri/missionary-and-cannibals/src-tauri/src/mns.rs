@@ -188,22 +188,24 @@ impl State {
         return valid;
     }
 
-    pub fn build_tree() -> String {
+    pub fn build_tree() -> Vec<String> {
         let mut game = State::new();
         // let mut graphviz_nodes = String::new();
         // let mut graphviz_edges = String::new();
-        let mut graphviz = String::new();
+        let mut graphviz = vec![String::new()];
 
         let mut queue: Vec<&mut State> = Vec::new();
         let mut visited: Vec<State> = Vec::new();
 
-        graphviz.push_str(&format!(
+        graphviz.last_mut().unwrap().push_str(&format!(
             "    {} [label=\"<< {}, {}, {}>>\", fillcolor=blue];\n",
             game.to_string(),
             game.missionaries,
             game.cannibals,
             game.boat
         ));
+
+        graphviz.push(graphviz.last().unwrap().clone());
 
         queue.push(&mut game);
 
@@ -222,13 +224,16 @@ impl State {
                 let neighbour_clone = neighbour.clone();
 
                 if visited.iter().find(|x| *x == neighbour).is_some() {
+                    graphviz.push(graphviz.last().unwrap().clone());
                     continue;
-                // } else if queue.contains(&neighbour) {
+                } else if queue.contains(&neighbour) {
+                    // graphviz.push(graphviz.last().unwrap().clone());
+                    // continue;
                 } else {
                     queue.push(neighbour);
                 }
 
-                graphviz.push_str(&format!(
+                graphviz.last_mut().unwrap().push_str(&format!(
                     "    {} [label=\"<< {}, {}, {}>>\", fillcolor=blue];\n",
                     neighbour_clone.to_string(),
                     neighbour_clone.missionaries,
@@ -236,24 +241,20 @@ impl State {
                     neighbour_clone.boat
                 ));
 
-                graphviz.push_str(&format!(
+                graphviz.last_mut().unwrap().push_str(&format!(
                     "    {} -> {} [label=\"{:?}\", color=red];\n",
                     current_state_clone.to_string(),
                     neighbour_clone.to_string(),
                     neighbour_clone.sail_history.last().unwrap()
                 ));
+
+                graphviz.push(graphviz.last().unwrap().clone());
             }
         }
 
-        let data = format!("digraph {{\n{}}}", graphviz);
-        return data;
+        return graphviz
+            .iter()
+            .map(|x| format!("digraph {{\n{}}}", x))
+            .collect();
     }
-}
-
-#[test]
-fn test_game() {
-    let gviz = State::build_tree();
-
-    let mut file = File::create("graph.dot").unwrap();
-    file.write_all(gviz.as_bytes()).unwrap();
 }
