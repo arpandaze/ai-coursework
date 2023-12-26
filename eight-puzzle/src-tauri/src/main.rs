@@ -7,11 +7,10 @@ mod eight_puzzle;
 #[tauri::command]
 fn generate_tree_breadth() -> Vec<String> {
     return eight_puzzle::EightPuzzleState::build_tree_depth_first(
-        3,
+        5,
         [2, 4, 6, 7, 3, 1, 0, 5, 8],
         // [2, 8, 3, 1, 6, 4, 7, 0, 5],
-        [2, 1, 5, 4, 3, 6, 7, 8, 0]
-        // [8, 6, 3, 2, 0, 4, 1, 7, 5],
+        [2, 1, 5, 4, 3, 6, 7, 8, 0], // [8, 6, 3, 2, 0, 4, 1, 7, 5],
     );
 }
 

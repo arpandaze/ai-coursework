@@ -157,41 +157,37 @@ impl EightPuzzleState {
         let mut game = EightPuzzleState::new(state, target);
         let mut graphviz = vec![String::new()];
 
+        let mut stack: Vec<(&mut EightPuzzleState, usize)> = Vec::new();
+        let mut visited: HashSet<u64> = HashSet::new();
+
         graphviz.last_mut().unwrap().push_str(&format!(
             "    {} [label=\"{}\", fillcolor=blue];\n",
             game.repr(),
             game.to_string(),
         ));
 
+        stack.push((&mut game, 0));
+
         graphviz.push(graphviz.last().unwrap().clone());
 
-        let mut stack: Vec<&mut EightPuzzleState> = Vec::new();
-        let mut visited: HashSet<u64> = HashSet::new();
-
-        stack.push(&mut game);
-
         let mut current_state;
+        let mut depth;
         let mut neighbours;
         let mut found = false;
 
-        while stack.len() > 0 {
-            current_state = stack.pop().unwrap();
+        while let Some((state, d)) = stack.pop() {
+            current_state = state;
+            depth = d;
 
-            if current_state.is_game_complete() {
-                println!("{:?}", current_state);
-                break;
-            }
-
-            if current_state.move_history.len() > limit {
+            if depth > limit {
                 continue;
             }
 
+            let current_state_clone = current_state.clone();
+
             visited.insert(current_state.int_repr());
 
-            let current_state_clone = current_state.clone();
-            neighbours = current_state.discover_neighbours(true);
-
-            let last_repr = neighbours.last().unwrap().repr();
+            neighbours = current_state.discover_neighbours(false);
 
             for neighbour in neighbours {
                 println!("{:?}", visited.len());
@@ -201,29 +197,24 @@ impl EightPuzzleState {
                 if visited.contains(&neighbour.int_repr()) {
                     graphviz.push(graphviz.last().unwrap().clone());
                     continue;
-                } else if stack.contains(&neighbour) {
-                    graphviz.push(graphviz.last().unwrap().clone());
-                    continue;
                 } else {
-                    stack.push(neighbour);
+                    stack.push((neighbour, depth + 1));
                 }
 
-                if neighbour_clone.repr() == last_repr {
-                    graphviz.last_mut().unwrap().push_str(&format!(
-                        "    {} [label=\"{}\", fillcolor=blue];\n",
-                        neighbour_clone.repr(),
-                        neighbour_clone.to_string(),
-                    ));
+                graphviz.last_mut().unwrap().push_str(&format!(
+                    "    {} [label=\"{}\", fillcolor=blue];\n",
+                    neighbour_clone.repr(),
+                    neighbour_clone.to_string(),
+                ));
 
-                    graphviz.last_mut().unwrap().push_str(&format!(
-                        "    {} -> {} [label=\"{:?}\", color=red];\n",
-                        current_state_clone.repr(),
-                        neighbour_clone.repr(),
-                        neighbour_clone.move_history.last().unwrap()
-                    ));
+                graphviz.last_mut().unwrap().push_str(&format!(
+                    "    {} -> {} [label=\"{:?}\", color=red];\n",
+                    current_state_clone.repr(),
+                    neighbour_clone.repr(),
+                    neighbour_clone.move_history.last().unwrap()
+                ));
 
-                    graphviz.push(graphviz.last().unwrap().clone());
-                }
+                graphviz.push(graphviz.last().unwrap().clone());
 
                 if neighbour_clone.is_game_complete() {
                     println!("{:?}", neighbour_clone);
@@ -231,10 +222,13 @@ impl EightPuzzleState {
                     break;
                 }
             }
+
             if found {
                 break;
             }
         }
+
+        println!("{:?}", graphviz);
 
         return graphviz
             .iter()
