@@ -1,3 +1,5 @@
+use std::collections::{HashSet, VecDeque};
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,6 +52,14 @@ impl EightPuzzleState {
         }
     }
 
+    fn int_repr(&self) -> u64 {
+        let mut repr = 0;
+        for i in 0..9 {
+            repr += (self.board[i] as u64) << (4 * i);
+        }
+        repr
+    }
+
     fn repr(&self) -> String {
         format!(
             "{}{}{}{}{}{}{}{}{}",
@@ -77,7 +87,7 @@ impl EightPuzzleState {
         self.children == vec![]
     }
 
-    pub fn discover_neighbours(&mut self) -> Vec<&mut EightPuzzleState> {
+    pub fn discover_neighbours(&mut self, reverse: bool) -> Vec<&mut EightPuzzleState> {
         let mut next_states: Vec<EightPuzzleState> = Vec::new();
 
         let mut next_state = self.clone();
@@ -101,8 +111,11 @@ impl EightPuzzleState {
         }
 
         self.children = next_states.clone();
-
-        return self.children.iter_mut().collect();
+        if reverse {
+            return self.children.iter_mut().rev().collect();
+        } else {
+            return self.children.iter_mut().collect();
+        }
     }
 
     fn is_game_complete(&self) -> bool {
@@ -140,76 +153,173 @@ impl EightPuzzleState {
         return false;
     }
 
-    pub fn build_tree_breadth_first(state: [u8; 9], target: [u8; 9]) -> Vec<String> {
+    pub fn build_tree_depth_first(limit: usize, state: [u8; 9], target: [u8; 9]) -> Vec<String> {
         let mut game = EightPuzzleState::new(state, target);
-        // let mut graphviz = vec![String::new()];
+        let mut graphviz = vec![String::new()];
 
-        let mut queue: Vec<&mut EightPuzzleState> = Vec::new();
-        let mut visited: Vec<EightPuzzleState> = Vec::new();
+        graphviz.last_mut().unwrap().push_str(&format!(
+            "    {} [label=\"{}\", fillcolor=blue];\n",
+            game.repr(),
+            game.to_string(),
+        ));
 
-        // graphviz.last_mut().unwrap().push_str(&format!(
-        //     "    {} [label=\"{}\", fillcolor=blue];\n",
-        //     game.repr(),
-        //     game.to_string(),
-        // ));
+        graphviz.push(graphviz.last().unwrap().clone());
 
-        // graphviz.push(graphviz.last().unwrap().clone());
+        let mut stack: Vec<&mut EightPuzzleState> = Vec::new();
+        let mut visited: HashSet<u64> = HashSet::new();
 
-        queue.push(&mut game);
+        stack.push(&mut game);
 
         let mut current_state;
         let mut neighbours;
-        while queue.len() > 0 {
-            current_state = queue.remove(0);
+        let mut found = false;
 
-            let current_state_clone = current_state.clone();
+        while stack.len() > 0 {
+            current_state = stack.pop().unwrap();
 
             if current_state.is_game_complete() {
                 println!("{:?}", current_state);
                 break;
             }
 
-            visited.push(current_state.clone());
+            if current_state.move_history.len() > limit {
+                continue;
+            }
 
-            neighbours = current_state.discover_neighbours();
+            visited.insert(current_state.int_repr());
+
+            let current_state_clone = current_state.clone();
+            neighbours = current_state.discover_neighbours(true);
+
+            let last_repr = neighbours.last().unwrap().repr();
 
             for neighbour in neighbours {
                 println!("{:?}", visited.len());
 
                 let neighbour_clone = neighbour.clone();
 
-                if visited.contains(&neighbour) {
-                    // graphviz.push(graphviz.last().unwrap().clone());
+                if visited.contains(&neighbour.int_repr()) {
+                    graphviz.push(graphviz.last().unwrap().clone());
+                    continue;
+                } else if stack.contains(&neighbour) {
+                    graphviz.push(graphviz.last().unwrap().clone());
+                    continue;
+                } else {
+                    stack.push(neighbour);
+                }
+
+                if neighbour_clone.repr() == last_repr {
+                    graphviz.last_mut().unwrap().push_str(&format!(
+                        "    {} [label=\"{}\", fillcolor=blue];\n",
+                        neighbour_clone.repr(),
+                        neighbour_clone.to_string(),
+                    ));
+
+                    graphviz.last_mut().unwrap().push_str(&format!(
+                        "    {} -> {} [label=\"{:?}\", color=red];\n",
+                        current_state_clone.repr(),
+                        neighbour_clone.repr(),
+                        neighbour_clone.move_history.last().unwrap()
+                    ));
+
+                    graphviz.push(graphviz.last().unwrap().clone());
+                }
+
+                if neighbour_clone.is_game_complete() {
+                    println!("{:?}", neighbour_clone);
+                    found = true;
+                    break;
+                }
+            }
+            if found {
+                break;
+            }
+        }
+
+        return graphviz
+            .iter()
+            .map(|x| format!("digraph {{\n{}}}", x))
+            .collect();
+    }
+
+    pub fn build_tree_breadth_first(state: [u8; 9], target: [u8; 9]) -> Vec<String> {
+        let mut game = EightPuzzleState::new(state, target);
+        let mut graphviz = vec![String::new()];
+
+        let mut queue: Vec<&mut EightPuzzleState> = Vec::new();
+        let mut visited: HashSet<u64> = HashSet::new();
+
+        graphviz.last_mut().unwrap().push_str(&format!(
+            "    {} [label=\"{}\", fillcolor=blue];\n",
+            game.repr(),
+            game.to_string(),
+        ));
+
+        graphviz.push(graphviz.last().unwrap().clone());
+
+        queue.push(&mut game);
+
+        let mut current_state;
+        let mut neighbours;
+        let mut found = false;
+
+        while queue.len() > 0 {
+            current_state = queue.remove(0);
+
+            let current_state_clone = current_state.clone();
+
+            visited.insert(current_state.int_repr());
+
+            neighbours = current_state.discover_neighbours(false);
+
+            for neighbour in neighbours {
+                println!("{:?}", visited.len());
+
+                let neighbour_clone = neighbour.clone();
+
+                if visited.contains(&neighbour.int_repr()) {
+                    graphviz.push(graphviz.last().unwrap().clone());
                     continue;
                 } else if queue.contains(&neighbour) {
-                    // graphviz.push(graphviz.last().unwrap().clone());
-                    // continue;
+                    graphviz.push(graphviz.last().unwrap().clone());
+                    continue;
                 } else {
                     queue.push(neighbour);
                 }
 
-                // graphviz.last_mut().unwrap().push_str(&format!(
-                //     "    {} [label=\"{}\", fillcolor=blue];\n",
-                //     neighbour_clone.repr(),
-                //     neighbour_clone.to_string(),
-                // ));
-                //
-                // graphviz.last_mut().unwrap().push_str(&format!(
-                //     "    {} -> {} [label=\"{:?}\", color=red];\n",
-                //     current_state_clone.repr(),
-                //     neighbour_clone.repr(),
-                //     neighbour_clone.move_history.last().unwrap()
-                // ));
-                //
-                // graphviz.push(graphviz.last().unwrap().clone());
+                graphviz.last_mut().unwrap().push_str(&format!(
+                    "    {} [label=\"{}\", fillcolor=blue];\n",
+                    neighbour_clone.repr(),
+                    neighbour_clone.to_string(),
+                ));
+
+                graphviz.last_mut().unwrap().push_str(&format!(
+                    "    {} -> {} [label=\"{:?}\", color=red];\n",
+                    current_state_clone.repr(),
+                    neighbour_clone.repr(),
+                    neighbour_clone.move_history.last().unwrap()
+                ));
+
+                graphviz.push(graphviz.last().unwrap().clone());
+
+                if neighbour_clone.is_game_complete() {
+                    println!("{:?}", neighbour_clone);
+                    found = true;
+                    break;
+                }
+            }
+
+            if found {
+                break;
             }
         }
 
-        // return graphviz
-        //     .iter()
-        //     .map(|x| format!("digraph {{\n{}}}", x))
-        //     .collect();
-        return vec![];
+        println!("{:?}", graphviz);
+
+        return graphviz
+            .iter()
+            .map(|x| format!("digraph {{\n{}}}", x))
+            .collect();
     }
 }
 
@@ -219,10 +329,14 @@ mod tests {
 
     #[test]
     fn test_build_tree() {
-        let mut state = EightPuzzleState::build_tree_breadth_first(
-            [1, 3, 5, 8, 0, 7, 4, 6, 2],
-            [1, 2, 3, 4, 5, 6, 7, 8, 0],
+        let test = EightPuzzleState::build_tree_depth_first(
+            3,
+            [2, 4, 6, 7, 3, 1, 0, 5, 8],
+            // [2, 8, 3, 1, 6, 4, 7, 0, 5],
+            [2, 1, 5, 4, 3, 6, 7, 8, 0],
         );
+
+        println!("{:?}", test.last().unwrap());
 
         // println!("{:?}", state.make_move(Move::Down));
         // println!("{:?}", state.is_terminal());

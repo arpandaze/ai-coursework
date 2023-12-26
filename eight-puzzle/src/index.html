@@ -8,55 +8,57 @@
   <script>
     const { invoke } = window.__TAURI__.tauri;
 
-    var dotIndex = 0;
-    var graphviz = d3
-      .select("#graph")
-      .graphviz()
-      .transition(function () {
-        return d3.transition().ease(d3.easeLinear).delay(100).duration(150);
-      })
-      .logEvents(true)
-      .on("initEnd", render);
-
-    function attributer(datum, index, nodes) {
-      var selection = d3.select(this);
-      if (datum.tag == "svg") {
-        var width = "1920";
-        var height = "1080";
-        var x = "10";
-        var y = "10";
-        selection
-          .attr("width", width + "pt")
-          .attr("height", height + "pt")
-          .attr("viewBox", -x + " " + -y + " " + width + " " + height);
-        datum.attributes.width = width + "pt";
-        datum.attributes.height = height + "pt";
-        datum.attributes.viewBox = -x + " " + -y + " " + width + " " + height;
-      }
-    }
-
-    function render() {
-      var dotLines = dots[dotIndex % dots.length];
-      var dot = dotLines.join("");
-      graphviz
-        //        .tweenPaths(false)
-        .tweenShapes(false)
-        .dot(dot)
-        .attributer(attributer)
-        .render()
-        .on("end", function () {
-          if (dotIndex != 0) {
-            render();
-          }
-        });
-      dotIndex += 1;
-    }
-    var dots = [];
-
-    invoke("generate_tree", { "": "" }).then((resp) => {
-      dots = [resp[resp.length -1]].map((item) => {
+    invoke("generate_tree_breadth", { "": "" }).then((resp) => {
+      var dots = resp.map((item) => {
         return item.split("\n");
       });
+
+      var dotIndex = 0;
+      var graphviz = d3
+        .select("#graph")
+        .graphviz()
+        .transition(function () {
+          return d3.transition().ease(d3.easeLinear).delay(100).duration(150);
+        })
+        // .logEvents(true)
+        .on("initEnd", render);
+
+      function attributer(datum, index, nodes) {
+        var selection = d3.select(this);
+        if (datum.tag == "svg") {
+          var width = "1920";
+          var height = "1080";
+          var x = "10";
+          var y = "10";
+          selection
+            .attr("width", width + "pt")
+            .attr("height", height + "pt")
+            .attr("viewBox", -x + " " + -y + " " + width + " " + height);
+          datum.attributes.width = width + "pt";
+          datum.attributes.height = height + "pt";
+          datum.attributes.viewBox = -x + " " + -y + " " + width + " " + height;
+        }
+      }
+
+      function render() {
+        if (dotIndex >= dots.length) {
+          return;
+        }
+        var dotLines = dots[dotIndex % dots.length];
+        var dot = dotLines.join("");
+        graphviz
+          //        .tweenPaths(false)
+          .tweenShapes(false)
+          .dot(dot)
+          .attributer(attributer)
+          .render()
+          .on("end", function () {
+            if (dotIndex != 0) {
+              render();
+            }
+          });
+        dotIndex += 1;
+      }
     });
   </script>
 </body>
