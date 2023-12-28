@@ -1,4 +1,3 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod eight_puzzle;
@@ -6,12 +5,16 @@ mod eight_puzzle;
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
 fn generate_tree_breadth() -> Vec<String> {
-    return eight_puzzle::EightPuzzleState::build_tree_depth_first(
-        5,
-        [2, 4, 6, 7, 3, 1, 0, 5, 8],
-        // [2, 8, 3, 1, 6, 4, 7, 0, 5],
-        [2, 1, 5, 4, 3, 6, 7, 8, 0], // [8, 6, 3, 2, 0, 4, 1, 7, 5],
+    let (ret, _) = eight_puzzle::EightPuzzleState::astar_search(
+        true,
+        eight_puzzle::EightPuzzleState::manhattan_distance,
+        [1, 2, 3, 0, 4, 6, 7, 5, 8],
+        [1, 2, 3, 4, 5, 6, 7, 8, 0],
+        // [6, 0, 8, 3, 1, 5, 2, 7, 4],
+        // [1, 2, 3, 4, 5, 6, 7, 8, 0],
     );
+
+    return ret;
 }
 
 // #[tauri::command]

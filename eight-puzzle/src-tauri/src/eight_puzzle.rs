@@ -17,12 +17,14 @@ pub struct EightPuzzleState {
     target: [u8; 9],
     move_history: Vec<Move>,
     children: Vec<EightPuzzleState>,
+
+    graphviz: bool,
 }
 
 impl ToString for EightPuzzleState {
     fn to_string(&self) -> String {
         format!(
-            "{} {} {}\\n{} {} {}\\n{} {} {}",
+            "     {}  {}  {}     \\n     {}  {}  {}     \\n     {}  {}  {}     ",
             self.board[0],
             self.board[1],
             self.board[2],
@@ -43,12 +45,13 @@ impl PartialEq for EightPuzzleState {
 }
 
 impl EightPuzzleState {
-    fn new(state: [u8; 9], target: [u8; 9]) -> EightPuzzleState {
+    fn new(graphviz: bool, state: [u8; 9], target: [u8; 9]) -> EightPuzzleState {
         EightPuzzleState {
             board: state,
             target,
             move_history: Vec::new(),
             children: Vec::new(),
+            graphviz,
         }
     }
 
@@ -81,6 +84,39 @@ impl EightPuzzleState {
 
     pub fn blank_position(&self) -> usize {
         self.board.iter().position(|&x| x == 0).unwrap()
+    }
+
+    pub fn misplaced_tiles(&self) -> usize {
+        let mut count = 0;
+        for i in 1..9 {
+            if self.board[i] != self.target[i] {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    pub fn manhattan_distance(&self) -> usize {
+        let source = self.board;
+        let target = self.target;
+
+        let mut distance = 0;
+
+        for i in 1..9 {
+            let source_index = source.iter().position(|&x| x == i as u8).unwrap();
+            let target_index = target.iter().position(|&x| x == i as u8).unwrap();
+
+            let source_x = source_index % 3;
+            let source_y = source_index / 3;
+
+            let target_x = target_index % 3;
+            let target_y = target_index / 3;
+
+            distance += (source_x as i8 - target_x as i8).abs() as usize;
+            distance += (source_y as i8 - target_y as i8).abs() as usize;
+        }
+
+        distance
     }
 
     pub fn is_terminal(&self) -> bool {
@@ -153,29 +189,37 @@ impl EightPuzzleState {
         return false;
     }
 
-    pub fn build_tree_depth_first(limit: usize, state: [u8; 9], target: [u8; 9]) -> Vec<String> {
-        let mut game = EightPuzzleState::new(state, target);
+    pub fn build_tree_depth_first(
+        visualize: bool,
+        limit: usize,
+        state: [u8; 9],
+        target: [u8; 9],
+    ) -> (Vec<String>, EightPuzzleState) {
+        let mut game = EightPuzzleState::new(visualize, state, target);
         let mut graphviz = vec![String::new()];
 
-        let mut stack: Vec<(&mut EightPuzzleState, usize)> = Vec::new();
+        let mut queue: VecDeque<(&mut EightPuzzleState, usize)> = VecDeque::new();
         let mut visited: HashSet<u64> = HashSet::new();
 
-        graphviz.last_mut().unwrap().push_str(&format!(
-            "    {} [label=\"{}\", fillcolor=blue];\n",
-            game.repr(),
-            game.to_string(),
-        ));
+        if visualize {
+            graphviz.last_mut().unwrap().push_str(&format!(
+                "    {} [label=\"{}\", fillcolor=blue];\n",
+                game.repr(),
+                game.to_string(),
+            ));
+        }
 
-        stack.push((&mut game, 0));
+        queue.push_back((&mut game, 0));
 
-        graphviz.push(graphviz.last().unwrap().clone());
+        if visualize {
+            graphviz.push(graphviz.last().unwrap().clone());
+        }
 
         let mut current_state;
         let mut depth;
         let mut neighbours;
-        let mut found = false;
 
-        while let Some((state, d)) = stack.pop() {
+        while let Some((state, d)) = queue.pop_front() {
             current_state = state;
             depth = d;
 
@@ -187,10 +231,15 @@ impl EightPuzzleState {
 
             visited.insert(current_state.int_repr());
 
+            if current_state.is_game_complete() {
+                println!("{:?}", current_state);
+                break;
+            }
+
             neighbours = current_state.discover_neighbours(false);
 
             for neighbour in neighbours {
-                println!("{:?}", visited.len());
+                // println!("{:?}", visited.len());
 
                 let neighbour_clone = neighbour.clone();
 
@@ -198,58 +247,75 @@ impl EightPuzzleState {
                     graphviz.push(graphviz.last().unwrap().clone());
                     continue;
                 } else {
-                    stack.push((neighbour, depth + 1));
+                    queue.push_back((neighbour, depth + 1));
                 }
 
-                graphviz.last_mut().unwrap().push_str(&format!(
-                    "    {} [label=\"{}\", fillcolor=blue];\n",
-                    neighbour_clone.repr(),
-                    neighbour_clone.to_string(),
-                ));
+                if visualize {
+                    graphviz.last_mut().unwrap().push_str(&format!(
+                        "    {} [label=\"{}\", fillcolor=blue];\n",
+                        neighbour_clone.repr(),
+                        neighbour_clone.to_string(),
+                    ));
 
-                graphviz.last_mut().unwrap().push_str(&format!(
-                    "    {} -> {} [label=\"{:?}\", color=red];\n",
-                    current_state_clone.repr(),
-                    neighbour_clone.repr(),
-                    neighbour_clone.move_history.last().unwrap()
-                ));
+                    graphviz.last_mut().unwrap().push_str(&format!(
+                        "    {} -> {} [label=\"{:?}\", color=red];\n",
+                        current_state_clone.repr(),
+                        neighbour_clone.repr(),
+                        neighbour_clone.move_history.last().unwrap()
+                    ));
 
-                graphviz.push(graphviz.last().unwrap().clone());
-
-                if neighbour_clone.is_game_complete() {
-                    println!("{:?}", neighbour_clone);
-                    found = true;
-                    break;
+                    graphviz.push(graphviz.last().unwrap().clone());
                 }
-            }
-
-            if found {
-                break;
             }
         }
 
-        println!("{:?}", graphviz);
+        // println!("{:?}", graphviz);
 
-        return graphviz
-            .iter()
-            .map(|x| format!("digraph {{\n{}}}", x))
-            .collect();
+        return (
+            graphviz
+                .iter()
+                .map(|x| format!("digraph {{\n{}}}", x))
+                .collect(),
+            game,
+        );
     }
 
-    pub fn build_tree_breadth_first(state: [u8; 9], target: [u8; 9]) -> Vec<String> {
-        let mut game = EightPuzzleState::new(state, target);
+    pub fn astar_evaluation(&self, heuristic_fn: fn(&EightPuzzleState) -> usize) -> usize {
+        println!("{:?}", self.to_string());
+        println!(
+            "EVALS: {:?}, {:?}, {:?}",
+            self.move_history.len(),
+            heuristic_fn(&self),
+            self.move_history.len() + heuristic_fn(&self)
+        );
+        self.move_history.len() + heuristic_fn(&self)
+    }
+
+    pub fn astar_search(
+        visualize: bool,
+        heuristic_fn: fn(&EightPuzzleState) -> usize,
+        state: [u8; 9],
+        target: [u8; 9],
+    ) -> (Vec<String>, EightPuzzleState) {
+        let mut game = EightPuzzleState::new(visualize, state, target);
         let mut graphviz = vec![String::new()];
 
         let mut queue: Vec<&mut EightPuzzleState> = Vec::new();
         let mut visited: HashSet<u64> = HashSet::new();
 
-        graphviz.last_mut().unwrap().push_str(&format!(
-            "    {} [label=\"{}\", fillcolor=blue];\n",
-            game.repr(),
-            game.to_string(),
-        ));
+        if visualize {
+            graphviz.last_mut().unwrap().push_str(&format!(
+                "    {} [label=\"{}\", fillcolor=blue];\n",
+                game.repr(),
+                format!(
+                    "{}\\n\\nh={}",
+                    game.to_string(),
+                    game.astar_evaluation(heuristic_fn)
+                ),
+            ));
 
-        graphviz.push(graphviz.last().unwrap().clone());
+            graphviz.push(graphviz.last().unwrap().clone());
+        }
 
         queue.push(&mut game);
 
@@ -272,29 +338,142 @@ impl EightPuzzleState {
                 let neighbour_clone = neighbour.clone();
 
                 if visited.contains(&neighbour.int_repr()) {
-                    graphviz.push(graphviz.last().unwrap().clone());
+                    if visualize {
+                        graphviz.push(graphviz.last().unwrap().clone());
+                    }
                     continue;
                 } else if queue.contains(&neighbour) {
-                    graphviz.push(graphviz.last().unwrap().clone());
+                    if visualize {
+                        graphviz.push(graphviz.last().unwrap().clone());
+                    }
                     continue;
                 } else {
                     queue.push(neighbour);
                 }
 
-                graphviz.last_mut().unwrap().push_str(&format!(
-                    "    {} [label=\"{}\", fillcolor=blue];\n",
-                    neighbour_clone.repr(),
-                    neighbour_clone.to_string(),
-                ));
+                if visualize {
+                    graphviz.last_mut().unwrap().push_str(&format!(
+                        "    {} [label=\"{}\", fillcolor=blue];\n",
+                        neighbour_clone.repr(),
+                        format!(
+                            "{}\\n\\nh={}",
+                            neighbour_clone.to_string(),
+                            neighbour_clone.astar_evaluation(heuristic_fn)
+                        ),
+                    ));
 
-                graphviz.last_mut().unwrap().push_str(&format!(
-                    "    {} -> {} [label=\"{:?}\", color=red];\n",
-                    current_state_clone.repr(),
-                    neighbour_clone.repr(),
-                    neighbour_clone.move_history.last().unwrap()
-                ));
+                    graphviz.last_mut().unwrap().push_str(&format!(
+                        "    {} -> {} [label=\"{:?}\", color=red];\n",
+                        current_state_clone.repr(),
+                        neighbour_clone.repr(),
+                        neighbour_clone.move_history.last().unwrap()
+                    ));
 
-                graphviz.push(graphviz.last().unwrap().clone());
+                    graphviz.push(graphviz.last().unwrap().clone());
+                }
+
+                if neighbour_clone.is_game_complete() {
+                    println!("{:?}", neighbour_clone);
+                    found = true;
+                    break;
+                }
+            }
+
+            if found {
+                break;
+            }
+
+            // Reorder queue based on heuristic_fn
+            queue.sort_by(|a, b| {
+                let a_heuristic = a.astar_evaluation(heuristic_fn);
+                let b_heuristic = b.astar_evaluation(heuristic_fn);
+
+                a_heuristic.cmp(&b_heuristic)
+            });
+        }
+
+        // println!("{:?}", graphviz);
+
+        return (
+            graphviz
+                .iter()
+                .map(|x| format!("digraph {{\n{}}}", x))
+                .collect(),
+            game,
+        );
+    }
+
+    pub fn build_tree_breadth_first(
+        visualize: bool,
+        state: [u8; 9],
+        target: [u8; 9],
+    ) -> (Vec<String>, EightPuzzleState) {
+        let mut game = EightPuzzleState::new(visualize, state, target);
+        let mut graphviz = vec![String::new()];
+
+        let mut queue: Vec<&mut EightPuzzleState> = Vec::new();
+        let mut visited: HashSet<u64> = HashSet::new();
+
+        if visualize {
+            graphviz.last_mut().unwrap().push_str(&format!(
+                "    {} [label=\"{}\", fillcolor=blue];\n",
+                game.repr(),
+                game.to_string(),
+            ));
+
+            graphviz.push(graphviz.last().unwrap().clone());
+        }
+
+        queue.push(&mut game);
+
+        let mut current_state;
+        let mut neighbours;
+        let mut found = false;
+
+        while queue.len() > 0 {
+            current_state = queue.remove(0);
+
+            let current_state_clone = current_state.clone();
+
+            visited.insert(current_state.int_repr());
+
+            neighbours = current_state.discover_neighbours(false);
+
+            for neighbour in neighbours {
+                // println!("{:?}", visited.len());
+
+                let neighbour_clone = neighbour.clone();
+
+                if visited.contains(&neighbour.int_repr()) {
+                    if visualize {
+                        graphviz.push(graphviz.last().unwrap().clone());
+                    }
+                    continue;
+                } else if queue.contains(&neighbour) {
+                    if visualize {
+                        graphviz.push(graphviz.last().unwrap().clone());
+                    }
+                    continue;
+                } else {
+                    queue.push(neighbour);
+                }
+
+                if visualize {
+                    graphviz.last_mut().unwrap().push_str(&format!(
+                        "    {} [label=\"{}\", fillcolor=blue];\n",
+                        neighbour_clone.repr(),
+                        neighbour_clone.to_string(),
+                    ));
+
+                    graphviz.last_mut().unwrap().push_str(&format!(
+                        "    {} -> {} [label=\"{:?}\", color=red];\n",
+                        current_state_clone.repr(),
+                        neighbour_clone.repr(),
+                        neighbour_clone.move_history.last().unwrap()
+                    ));
+
+                    graphviz.push(graphviz.last().unwrap().clone());
+                }
 
                 if neighbour_clone.is_game_complete() {
                     println!("{:?}", neighbour_clone);
@@ -308,12 +487,15 @@ impl EightPuzzleState {
             }
         }
 
-        println!("{:?}", graphviz);
+        // println!("{:?}", graphviz);
 
-        return graphviz
-            .iter()
-            .map(|x| format!("digraph {{\n{}}}", x))
-            .collect();
+        return (
+            graphviz
+                .iter()
+                .map(|x| format!("digraph {{\n{}}}", x))
+                .collect(),
+            game,
+        );
     }
 }
 
@@ -323,17 +505,33 @@ mod tests {
 
     #[test]
     fn test_build_tree() {
-        let test = EightPuzzleState::build_tree_depth_first(
-            3,
-            [2, 4, 6, 7, 3, 1, 0, 5, 8],
-            // [2, 8, 3, 1, 6, 4, 7, 0, 5],
-            [2, 1, 5, 4, 3, 6, 7, 8, 0],
+        // let test = EightPuzzleState {
+        //     board: [0, 2, 3, 1, 4, 6, 7, 5, 8],
+        //     target: [1, 2, 3, 4, 5, 6, 7, 8, 0],
+        //     move_history: Vec::new(),
+        //     children: Vec::new(),
+        //     graphviz: false,
+        // };
+        //
+        // println!("Manhattan: {:?}", test.manhattan_distance());
+        // return;
+
+        let (ret, _) = EightPuzzleState::astar_search(
+            true,
+            EightPuzzleState::manhattan_distance,
+            [1, 2, 3, 0, 4, 6, 7, 5, 8],
+            [1, 2, 3, 4, 5, 6, 7, 8, 0],
         );
 
-        println!("{:?}", test.last().unwrap());
+        println!("{:?}", ret);
 
-        // println!("{:?}", state.make_move(Move::Down));
-        // println!("{:?}", state.is_terminal());
-        // println!("{:?}", state);
+        // let (ret, _) = EightPuzzleState::build_tree_breadth_first(
+        //
+        //     false,
+        //     [6, 0, 8, 3, 1, 5, 2, 7, 4],
+        //     [1, 2, 3, 4, 5, 6, 7, 8, 0],
+        // );
+        //
+        // println!("{:?}", ret);
     }
 }
