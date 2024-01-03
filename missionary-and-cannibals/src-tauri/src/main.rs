@@ -6,7 +6,7 @@ mod mns;
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
 fn generate_tree() -> Vec<String> {
-    return mns::State::build_tree();
+    return mns::State::build_breadth_first_tree();
 }
 
 fn main() {

@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Error, Write};
 use std::{fmt::Display, fs::File};
 
@@ -99,6 +100,12 @@ impl State {
         self.missionaries == 0 && self.cannibals == 0
     }
 
+    fn repr(&self) -> u64 {
+        return self.missionaries as u64
+            + (self.cannibals as u64 * 10)
+            + ((self.boat as u64) * 100);
+    }
+
     fn sail(&mut self, kind: Move) -> bool {
         let mut valid = true;
 
@@ -188,13 +195,101 @@ impl State {
         return valid;
     }
 
-    pub fn build_tree() -> Vec<String> {
+    pub fn build_breadth_first_tree() -> Vec<String> {
         let mut game = State::new();
         // let mut graphviz_nodes = String::new();
         // let mut graphviz_edges = String::new();
         let mut graphviz = vec![String::new()];
 
-        let mut queue: Vec<&mut State> = Vec::new();
+        let mut queue: VecDeque<&mut State> = VecDeque::new();
+        let mut visited: Vec<u64> = Vec::new();
+
+        graphviz.last_mut().unwrap().push_str(&format!(
+            "    {} [label=\"<< {}, {}, {}>>\", fillcolor=blue, style=filled];\n",
+            game.to_string(),
+            game.missionaries,
+            game.cannibals,
+            game.boat
+        ));
+
+        graphviz.push(graphviz.last().unwrap().clone());
+
+        queue.push_back(&mut game);
+
+        let mut current_state;
+        let mut neighbours;
+
+        let mut found = false;
+
+        while queue.len() > 0 {
+            current_state = queue.pop_front().unwrap();
+
+            let current_state_clone = current_state.clone();
+
+            visited.push(current_state.repr());
+
+            neighbours = current_state.discover_neighbours();
+
+            for neighbour in neighbours {
+                let neighbour_clone = neighbour.clone();
+
+                if visited.iter().find(|x| **x == neighbour.repr()).is_some() {
+                    graphviz.push(graphviz.last().unwrap().clone());
+                    continue;
+                } else if queue.contains(&neighbour) {
+                    graphviz.push(graphviz.last().unwrap().clone());
+                    continue;
+                } else {
+                    queue.push_back(neighbour);
+                }
+
+                let color = if neighbour_clone.is_game_complete() {
+                    "green"
+                } else {
+                    "white"
+                };
+
+                graphviz.last_mut().unwrap().push_str(&format!(
+                    "    {} [label=\"<< {}, {}, {}>>\", fillcolor={}, style=filled];\n",
+                    neighbour_clone.to_string(),
+                    neighbour_clone.missionaries,
+                    neighbour_clone.cannibals,
+                    neighbour_clone.boat,
+                    color,
+                ));
+
+                graphviz.last_mut().unwrap().push_str(&format!(
+                    "    {} -> {} [label=\"{:?}\", color=red];\n",
+                    current_state_clone.to_string(),
+                    neighbour_clone.to_string(),
+                    neighbour_clone.sail_history.last().unwrap()
+                ));
+
+                graphviz.push(graphviz.last().unwrap().clone());
+
+                if neighbour_clone.is_game_complete() {
+                    found = true;
+                    break;
+                }
+            }
+            if found {
+                break;
+            }
+        }
+
+        return graphviz
+            .iter()
+            .map(|x| format!("digraph {{\n{}}}", x))
+            .collect();
+    }
+
+    pub fn build_depth_first_tree() -> Vec<String> {
+        let mut game = State::new();
+        // let mut graphviz_nodes = String::new();
+        // let mut graphviz_edges = String::new();
+        let mut graphviz = vec![String::new()];
+
+        let mut stack: Vec<&mut State> = Vec::new();
         let mut visited: Vec<State> = Vec::new();
 
         graphviz.last_mut().unwrap().push_str(&format!(
@@ -207,12 +302,12 @@ impl State {
 
         graphviz.push(graphviz.last().unwrap().clone());
 
-        queue.push(&mut game);
+        stack.push(&mut game);
 
         let mut current_state;
         let mut neighbours;
-        while queue.len() > 0 {
-            current_state = queue.remove(0);
+        while stack.len() > 0 {
+            current_state = stack.pop().unwrap();
 
             let current_state_clone = current_state.clone();
 
@@ -226,11 +321,11 @@ impl State {
                 if visited.iter().find(|x| *x == neighbour).is_some() {
                     graphviz.push(graphviz.last().unwrap().clone());
                     continue;
-                } else if queue.contains(&neighbour) {
+                } else if stack.contains(&neighbour) {
                     // graphviz.push(graphviz.last().unwrap().clone());
                     // continue;
                 } else {
-                    queue.push(neighbour);
+                    stack.push(neighbour);
                 }
 
                 graphviz.last_mut().unwrap().push_str(&format!(

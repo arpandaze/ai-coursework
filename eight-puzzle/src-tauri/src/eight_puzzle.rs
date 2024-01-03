@@ -1,4 +1,7 @@
-use std::collections::{HashSet, VecDeque};
+use std::{
+    collections::{HashSet, VecDeque},
+    task::Wake,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -13,8 +16,8 @@ pub enum Move {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EightPuzzleState {
     board: [u8; 9],
-
     target: [u8; 9],
+
     move_history: Vec<Move>,
     children: Vec<EightPuzzleState>,
 
@@ -198,18 +201,18 @@ impl EightPuzzleState {
         let mut game = EightPuzzleState::new(visualize, state, target);
         let mut graphviz = vec![String::new()];
 
-        let mut queue: VecDeque<(&mut EightPuzzleState, usize)> = VecDeque::new();
+        let mut stack: Vec<(&mut EightPuzzleState, usize)> = Vec::new();
         let mut visited: HashSet<u64> = HashSet::new();
 
         if visualize {
             graphviz.last_mut().unwrap().push_str(&format!(
-                "    {} [label=\"{}\", fillcolor=blue];\n",
+                "    {} [label=\"{}\", fillcolor=blue, style=filled];\n",
                 game.repr(),
                 game.to_string(),
             ));
         }
 
-        queue.push_back((&mut game, 0));
+        stack.push((&mut game, 0));
 
         if visualize {
             graphviz.push(graphviz.last().unwrap().clone());
@@ -219,7 +222,8 @@ impl EightPuzzleState {
         let mut depth;
         let mut neighbours;
 
-        while let Some((state, d)) = queue.pop_front() {
+        let mut found = false;
+        while let Some((state, d)) = stack.pop() {
             current_state = state;
             depth = d;
 
@@ -237,24 +241,30 @@ impl EightPuzzleState {
             }
 
             neighbours = current_state.discover_neighbours(false);
+            neighbours.reverse();
 
             for neighbour in neighbours {
-                // println!("{:?}", visited.len());
-
                 let neighbour_clone = neighbour.clone();
 
                 if visited.contains(&neighbour.int_repr()) {
                     graphviz.push(graphviz.last().unwrap().clone());
                     continue;
                 } else {
-                    queue.push_back((neighbour, depth + 1));
+                    stack.push((neighbour, depth + 1));
                 }
+
+                let color = if neighbour_clone.is_game_complete() {
+                    "green"
+                } else {
+                    "white"
+                };
 
                 if visualize {
                     graphviz.last_mut().unwrap().push_str(&format!(
-                        "    {} [label=\"{}\", fillcolor=blue];\n",
+                        "    {} [label=\"{}\", fillcolor={}, style=filled];\n",
                         neighbour_clone.repr(),
                         neighbour_clone.to_string(),
+                        color,
                     ));
 
                     graphviz.last_mut().unwrap().push_str(&format!(
@@ -266,10 +276,16 @@ impl EightPuzzleState {
 
                     graphviz.push(graphviz.last().unwrap().clone());
                 }
+
+                if neighbour_clone.is_game_complete() {
+                    found = true;
+                    break;
+                }
+            }
+            if found {
+                break;
             }
         }
-
-        // println!("{:?}", graphviz);
 
         return (
             graphviz
@@ -281,13 +297,6 @@ impl EightPuzzleState {
     }
 
     pub fn astar_evaluation(&self, heuristic_fn: fn(&EightPuzzleState) -> usize) -> usize {
-        println!("{:?}", self.to_string());
-        println!(
-            "EVALS: {:?}, {:?}, {:?}",
-            self.move_history.len(),
-            heuristic_fn(&self),
-            self.move_history.len() + heuristic_fn(&self)
-        );
         self.move_history.len() + heuristic_fn(&self)
     }
 
@@ -305,7 +314,7 @@ impl EightPuzzleState {
 
         if visualize {
             graphviz.last_mut().unwrap().push_str(&format!(
-                "    {} [label=\"{}\", fillcolor=blue];\n",
+                "    {} [label=\"{}\", fillcolor=blue, style=filled];\n",
                 game.repr(),
                 format!(
                     "{}\\n\\nh={}",
@@ -333,8 +342,6 @@ impl EightPuzzleState {
             neighbours = current_state.discover_neighbours(false);
 
             for neighbour in neighbours {
-                println!("{:?}", visited.len());
-
                 let neighbour_clone = neighbour.clone();
 
                 if visited.contains(&neighbour.int_repr()) {
@@ -352,14 +359,21 @@ impl EightPuzzleState {
                 }
 
                 if visualize {
+                    let color = if neighbour_clone.is_game_complete() {
+                        "green"
+                    } else {
+                        "white"
+                    };
+
                     graphviz.last_mut().unwrap().push_str(&format!(
-                        "    {} [label=\"{}\", fillcolor=blue];\n",
+                        "    {} [label=\"{}\", fillcolor={}, style=filled];\n",
                         neighbour_clone.repr(),
                         format!(
                             "{}\\n\\nh={}",
                             neighbour_clone.to_string(),
-                            neighbour_clone.astar_evaluation(heuristic_fn)
+                            neighbour_clone.astar_evaluation(heuristic_fn),
                         ),
+                        color,
                     ));
 
                     graphviz.last_mut().unwrap().push_str(&format!(
@@ -373,7 +387,6 @@ impl EightPuzzleState {
                 }
 
                 if neighbour_clone.is_game_complete() {
-                    println!("{:?}", neighbour_clone);
                     found = true;
                     break;
                 }
@@ -391,8 +404,6 @@ impl EightPuzzleState {
                 a_heuristic.cmp(&b_heuristic)
             });
         }
-
-        // println!("{:?}", graphviz);
 
         return (
             graphviz
@@ -416,7 +427,7 @@ impl EightPuzzleState {
 
         if visualize {
             graphviz.last_mut().unwrap().push_str(&format!(
-                "    {} [label=\"{}\", fillcolor=blue];\n",
+                "    {} [label=\"{}\", fillcolor=blue, style=filled];\n",
                 game.repr(),
                 game.to_string(),
             ));
@@ -459,10 +470,17 @@ impl EightPuzzleState {
                 }
 
                 if visualize {
+                    let color = if neighbour_clone.is_game_complete() {
+                        "green"
+                    } else {
+                        "white"
+                    };
+
                     graphviz.last_mut().unwrap().push_str(&format!(
-                        "    {} [label=\"{}\", fillcolor=blue];\n",
+                        "    {} [label=\"{}\", fillcolor={}, style=filled];\n",
                         neighbour_clone.repr(),
                         neighbour_clone.to_string(),
+                        color,
                     ));
 
                     graphviz.last_mut().unwrap().push_str(&format!(
